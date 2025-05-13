@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學測號碼查詢校系</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; color: #333; }
+        .main-container { display: flex; flex-direction: column; gap: 20px; width: 90%; max-width: 600px; }
+        .card { background-color: #ffffff; padding: 25px 30px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        h1, h2 { color: #1877f2; text-align: center; margin-top: 0; }
+        h1 { margin-bottom: 25px; font-size: 1.8em; }
+        h2 { margin-bottom: 15px; font-size: 1.5em; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; text-align: left; color: #606770; }
+        input[type="text"], input[type="file"] { width: calc(100% - 24px); padding: 12px; margin-bottom: 20px; border: 1px solid #dddfe2; border-radius: 6px; box-sizing: border-box; font-size: 1em; }
+        input[type="file"] { padding: 8px 12px; } /* 微調檔案輸入框的 padding */
+        button { background-color: #1877f2; color: white; padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 1.1em; font-weight: 600; width: 100%; transition: background-color 0.2s ease-in-out; }
+        button:hover { background-color: #166fe5; }
+        button:disabled { background-color: #bcc0c4; cursor: not-allowed; }
+        #lookupResult, #uploadStatus, #dataStatusInfo { margin-top: 20px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 6px; background-color: #f7f7f7; min-height: 40px; line-height: 1.6; text-align: left; }
+        .error { color: #fa383e; font-weight: bold; }
+        .success { color: #28a745; font-weight: bold; }
+        .success ul { list-style-type: disc; padding-left: 25px; margin-top: 5px; margin-bottom: 0; }
+        .success ul li { margin-bottom: 4px; color: #27ac1b; font-weight: normal; }
+        .placeholder-text { color: #888; }
+        .info-text { font-size: 0.9em; color: #606770; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="card">
+            <h1>校系查詢系統</h1>
+            <div id="dataStatusInfo">
+                <p class="info-text">目前資料來源: <strong id="currentDataFile">{{ data_status.filename }}</strong></p>
+                {% if data_status.error %}
+                <p class="error info-text">載入錯誤: {{ data_status.error }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>上傳新的 Excel 資料檔</h2>
+            <form id="uploadForm">
+                <div>
+                    <label for="excelFile">選擇 Excel 檔案 (.xls, .xlsx):</label>
+                    <input type="file" id="excelFile" name="excelFile" accept=".xls,.xlsx" required>
+                </div>
+                <button type="submit" id="uploadButton">上傳並更新資料</button>
+            </form>
+            <div id="uploadStatus"><span class="placeholder-text">尚未上傳檔案。</span></div>
+        </div>
+
+        <div class="card">
+            <h2>查詢校系</h2>
+            <form id="lookupForm">
+                <div>
+                    <label for="gsat_id_input">輸入學測號碼：</label>
+                    <input type="text" id="gsat_id_input" name="gsat_id" required placeholder="例如：11000309">
+                </div>
+                <button type="submit" id="lookupButton">查詢</button>
+            </form>
+            <div id="lookupResult"><span class="placeholder-text">請輸入學測號碼進行查詢。</span></div>
+        </div>
+    </div>
+
+    <script>
+        const uploadForm = document.getElementById('uploadForm');
+        const excelFileInput = document.getElementById('excelFile');
+        const uploadButton = document.getElementById('uploadButton');
+        const uploadStatusDiv = document.getElementById('uploadStatus');
+        const currentDataFileSpan = document.getElementById('currentDataFile');
+        const dataStatusInfoDiv = document.getElementById('dataStatusInfo'); // 用於更新整個 data status
+
+        const lookupForm = document.getElementById('lookupForm');
+        const gsatIdInput = document.getElementById('gsat_id_input');
+        const lookupResultDiv = document.getElementById('lookupResult');
+        const lookupButton = document.getElementById('lookupButton');
+
+
+        // 處理檔案上傳
+        uploadForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const file = excelFileInput.files[0];
+
+            if (!file) {
+                uploadStatusDiv.innerHTML = '<span class="error">請先選擇一個檔案。</span>';
+                return;
+            }
+
+            uploadStatusDiv.innerHTML = '<span class="placeholder-text">上傳並處理中...</span>';
+            uploadButton.disabled = true;
+            lookupButton.disabled = true; // 上傳時也禁用查詢按鈕
+
+            const formData = new FormData();
+            formData.append('excelFile', file);
+
+            fetch('/upload_excel', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    uploadStatusDiv.innerHTML = `<span class="error">上傳失敗：${data.error}</span>`;
+                    // 更新 dataStatusInfoDiv 以顯示錯誤
+                    let errorHtml = `<p class="info-text">目前資料來源: <strong id="currentDataFile">錯誤，請重新上傳</strong></p>`;
+                    errorHtml += `<p class="error info-text">載入錯誤: ${data.error}</p>`;
+                    dataStatusInfoDiv.innerHTML = errorHtml;
+
+                } else if (data.message) {
+                    uploadStatusDiv.innerHTML = `<span class="success">${data.message}</span>`;
+                    // 更新 dataStatusInfoDiv 顯示新檔名且無錯誤
+                    let successHtml = `<p class="info-text">目前資料來源: <strong id="currentDataFile">${data.processed_filename || '已更新'}</strong></p>`;
+                    dataStatusInfoDiv.innerHTML = successHtml;
+                }
+                excelFileInput.value = ''; // 清空檔案選擇，避免重複提交同一個檔案
+            })
+            .catch(error => {
+                console.error('Upload fetch Error:', error);
+                uploadStatusDiv.innerHTML = `<span class="error">上傳過程中發生網路或客戶端錯誤：${error.message}</span>`;
+                let errorHtml = `<p class="info-text">目前資料來源: <strong id="currentDataFile">錯誤</strong></p>`;
+                errorHtml += `<p class="error info-text">上傳錯誤: ${error.message}</p>`;
+                dataStatusInfoDiv.innerHTML = errorHtml;
+            })
+            .finally(() => {
+                uploadButton.disabled = false;
+                lookupButton.disabled = false; // 重新啟用查詢按鈕
+            });
+        });
+
+        // 處理學測號碼查詢 (與之前類似)
+        lookupForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const gsatId = gsatIdInput.value.trim();
+            lookupResultDiv.innerHTML = '<span class="placeholder-text">查詢中...</span>';
+            lookupResultDiv.className = ''; 
+            lookupButton.disabled = true;
+
+            if (!gsatId) {
+                lookupResultDiv.innerHTML = '<span class="error">請輸入學測號碼。</span>';
+                lookupButton.disabled = false;
+                return;
+            }
+
+            fetch('/get_department', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded', },
+                body: new URLSearchParams({ 'gsat_id': gsatId })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(errData => {
+                        throw new Error(errData.error || `伺服器錯誤，狀態碼：${response.status}`);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    lookupResultDiv.innerHTML = `<span class="error">${data.error}</span>`;
+                } else if (data.department_names && Array.isArray(data.department_names) && data.department_names.length > 0) {
+                    let departmentsHtml = '<ul>';
+                    data.department_names.forEach(name => {
+                        const safeName = name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                        departmentsHtml += `<li>${safeName}</li>`;
+                    });
+                    departmentsHtml += '</ul>';
+                    lookupResultDiv.innerHTML = `<strong>學測號碼:</strong> ${data.gsat_id}<br><strong>校系名稱:</strong><div class="success">${departmentsHtml}</div>`;
+                } else {
+                    lookupResultDiv.innerHTML = `<span class="error">查無此學測號碼 (${data.gsat_id || gsatId}) 或該號碼無對應校系資料。</span>`;
+                }
+            })
+            .catch(error => {
+                console.error('Lookup fetch Error:', error);
+                lookupResultDiv.innerHTML = `<span class="error">查詢失敗：${error.message}</span>`;
+            })
+            .finally(() => {
+                lookupButton.disabled = false;
+            });
+        });
+    </script>
+</body>
+</html>
